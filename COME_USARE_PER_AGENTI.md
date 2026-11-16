@@ -1,6 +1,6 @@
 # ZZZ H3 Transition Director — guida per agenti (MCP / assistenti)
 
-Versione del nodo: **v2.27** (il numero e' nel titolo del nodo e nella prima riga del report; storico in testa a `director.py`).
+Versione del nodo: **v2.28** (il numero e' nel titolo del nodo e nella prima riga del report; storico in testa a `director.py`).
 Workflow di riferimento: `zzz_H3_TRANSITION_DIRECTOR_v2_TaoMate4`.
 
 > Stato di validazione (2026-11-16, transizione telo verde -> treno, 117 frame, 24 fps, stesso seed):
@@ -35,6 +35,8 @@ Workflow di riferimento: `zzz_H3_TRANSITION_DIRECTOR_v2_TaoMate4`.
 **Fusione (`fusione`, v2.25, solo con A e B SOVRAPPOSTE):** H3 parte dalla dissolvenza dei frame veri A->B e rigenera solo quella quota. A 0.8 resta una DOPPIA ESPOSIZIONE (trasparenza, sgradita): da provare 0.9-0.95; per ora la via buona e' quella sopra (B staccata). Se il modo non e' sovrapposta la fusione e' ignorata (avviso nel report).
 
 **Analisi camera e inquadratura (v2.26-v2.27, validata dall'utente su h3_director_v2_00050):** il movimento si misura in 4 punti: contesto A prima della zona, CODA di A che la zona rigenera, TESTA di B che la zona rigenera, contesto B dopo la zona (prima si guardava solo il contesto: se la zona si mangiava il pan di A, risultava "ferma"). Log: riga "camera: ...". Le descrizioni automatiche di A e B dicono SOLO aspetto/luogo/luce (la caption vecchia inventava "zoom out" che H3 eseguiva a scatto); l'inquadratura di fine A e inizio B (close-up/medium/wide) e' chiesta a parte e, se cambia, il prompt chiede il passaggio graduale (log: riga "inquadratura: ..."). Traduzione del GLOBAL PROMPT come istruzione di regia ("movimento unico" = "one single continuous movement").
+
+**Cambio di luogo sempre a stadi (v2.28, validato su h3_director_v2_00054):** la transizione automatica contiene SEMPRE "il luogo del primo shot (...) lascia gradualmente il posto a quello del successivo (...), rivelato dalla camera stessa", anche se il GLOBAL PROMPT parla solo della camera ("la camera si muove verso sinistra"). Senza, H3 restava su A per 3 s e poi cambiava luogo con una TENDINA all'ultimo (00052). Con la regola: pan continuo che attraversa gli spazi.
 
 **Regola di scrittura (misurata):** descrivere SEMPRE in POSITIVO cosa compare e dove ("la parte alta mostra il cielo nero e il treno"), mai negazioni di posizione ("niente in alto"): la frase negativa ha prodotto una fascia di green in alto.
 

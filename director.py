@@ -25,7 +25,7 @@ from comfy.ldm.minimax.model import FRAME_PER_TOKEN
 from comfy_extras import nodes_minimax_h3 as h3
 
 _OWNER = "ZZZ H3 Transition Director"
-VERSION = "v2.27"  # alzare a ogni modifica del nodo e annotare qui sotto
+VERSION = "v2.28"  # alzare a ogni modifica del nodo e annotare qui sotto
 # v2.0  base: timeline A/B, ancore, prompt a segmenti, audio originale in dissolvenza nell'Assemble
 # v2.1  2026-11-16  numero di versione nel titolo e nel report; audio solo dal Director (niente loader esterni)
 # v2.2  2026-11-16  prompt AUTOMATICO opzionale: caption di A e B (Qwen3-VL) + una riga 'idea_transizione'; audio automatico
@@ -54,6 +54,7 @@ VERSION = "v2.27"  # alzare a ogni modifica del nodo e annotare qui sotto
 # v2.25 2026-11-16  FUSIONE (clip sovrapposte): nella zona H3 parte dalla dissolvenza dei frame veri A->B e li rigenera solo in parte (fusione = quota rigenerata), cosi' i movimenti e i luoghi delle due clip si fondono
 # v2.26 2026-11-16  descrizioni automatiche SOLO aspetto (la caption inventava zoom eseguiti da H3); INQUADRATURA di fine A / inizio B e passaggio graduale tra le due; traduzione da regia
 # v2.27 2026-11-16  camera misurata anche sulla CODA di A e sulla TESTA di B che la zona rigenera (prima solo sui frame fuori zona: se la zona mangiava il pan di A risultava 'ferma')
+# v2.28 2026-11-16  la transizione a stadi contiene SEMPRE il cambio di luogo A -> B (anche se il GLOBAL PROMPT parla solo di camera): prima H3 restava su A e poi faceva una tendina all'ultimo
 FPS = h3.FPS  # 24: la timeline lavora nei frame del modello
 _NOWIN = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 VIDEO_EXT = (".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v")
@@ -612,8 +613,11 @@ def auto_texts(A, B, idea, a_audio, b_audio, mA=None, mB=None, tA=None, hB=None)
     else:
         sound = "Natural production sound continues without interruption."
     # transizione di default (nessun segmento sulla zona): l'idea dell'utente, oppure "la scena di A diventa quella di B"
-    trans = idea_en or ("the scene of the first shot progressively transforms into the scene of the next shot, %s"
-                        % cap_b.strip().split(". ")[0].rstrip("."))
+    first_a = cap_a.strip().split(". ")[0].rstrip(".")
+    first_b = cap_b.strip().split(". ")[0].rstrip(".")
+    place = ("the place of the first shot (%s) progressively gives way to the place of the next shot (%s), "
+             "revealed by the camera itself, spread evenly over the whole transition" % (first_a, first_b))
+    trans = ("%s; through this movement %s" % (idea_en.rstrip("."), place)) if idea_en else place
     return scena, finale, sound, (None if cuts_ok else FILL), trans
 
 
