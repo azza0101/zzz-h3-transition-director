@@ -132,15 +132,21 @@ H3 genera sempre a **24 fps**: non prenderli dai video. Il Director legge gli fp
 0. **Accesso:** il repository e' PRIVATO. Se `git clone` chiede credenziali: `gh auth login` (account dell'utente) e poi `gh repo clone azza0101/zzz-h3-transition-director`.
 1. **Nodo:** `git clone <url di questo repository>` dentro `ComfyUI/custom_nodes/` (cartella `zzz_h3_transition_director`). Aggiornare: `git pull` + riavvio di ComfyUI + F5. Il workflow e' in `example_workflows/` e compare nei Template di ComfyUI sotto questo nodo.
 2. **Prima di scaricare qualunque modello: CERCARE se c'e' gia'** sul PC (cartelle `models/` di ComfyUI e i percorsi in `extra_model_paths.yaml`), anche con nome diverso (stesso modello in altra quantizzazione). Scaricare SOLO cio' che manca, con il tool di download di ComfyUI (`download_model`), nella cartella giusta. Non inventare URL: cercare il nome esatto del file (HuggingFace / Civitai) e chiedere all'utente se non si trova.
-3. **Modelli usati dal workflow** (nome file -> tipo di cartella):
-   - `MINIMAX/minimax_h3_fl2va_pruned_int8_convrot.safetensors` -> `diffusion_models` (UNETLoader "H3 ref2va")
-   - `qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors` -> `text_encoders` / `clip` (CLIPLoader, type minimax)
-   - `minimax_h3_video_vae_int8_convrot.safetensors` -> `vae`
-   - `minimax_h3_audio_vae_fp32.safetensors` -> `vae`
-   - `MINIMAX/minimax_h3_taomate_fl2va_3step_avg_rank_19_bf16.safetensors` -> `loras` (TaoMate 3 step, ATTIVA)
-   - `taeh3.safetensors` -> `vae_approx` (solo anteprima durante il sampling)
-   - `minimax_h3_vae_decoder.engine` -> `vae` (decoder TensorRT, OPZIONALE). **Non copiarlo da un altro PC**: va ricompilato sulla GPU/TensorRT di destinazione (vedi nota "DECODE VELOCE" nel workflow). Se manca, collegare il VAE normale al decode.
-   - `Qwen-VL/Qwen3-VL-2B-Instruct` (cartella transformers) -> `models/LLM/Qwen-VL/` (solo per `automatico` = prompt automatico).
+3. **Modelli usati dal workflow: dove scaricarli** (indirizzi verificati il 2026-11-16, tutti rispondono; le dimensioni servono a riconoscere un file gia' presente). Cartella = sottocartella di `ComfyUI/models/`.
+
+   | File | Cartella | Download | Dimensione |
+   |---|---|---|---|
+   | `minimax_h3_fl2va_pruned_int8_convrot.safetensors` | `diffusion_models/MINIMAX/` | https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors | 20 970 379 616 B (~21 GB) |
+   | `qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors` | `text_encoders/` | https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors | 15 687 142 551 B (~15.7 GB) |
+   | `minimax_h3_video_vae_int8_convrot.safetensors` | `vae/` | https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/vae/minimax_h3_video_vae_int8_convrot.safetensors | 2 811 065 184 B |
+   | `minimax_h3_audio_vae_fp32.safetensors` | `vae/` | https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/vae/minimax_h3_audio_vae_fp32.safetensors | 605 254 808 B |
+   | `minimax_h3_taomate_fl2va_3step_avg_rank_19_bf16.safetensors` (LoRA TaoMate 3 step, ATTIVA) | `loras/MINIMAX/` | https://huggingface.co/Kijai/MiniMax-H3-experimental/resolve/main/loras/minimax_h3_taomate_fl2va_3step_avg_rank_19_bf16.safetensors | 176 723 664 B (identica a quella usata qui) |
+   | `taeh3.safetensors` (solo anteprima) | `vae_approx/` | https://huggingface.co/OzzyGT/taeh3/resolve/main/taeh3.safetensors (mirror di madebyollin/taehv) | 22 709 752 B (identica a quella usata qui) |
+   | `Qwen3-VL-2B-Instruct` (cartella intera, solo per `automatico`) | `LLM/Qwen-VL/Qwen3-VL-2B-Instruct/` | https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct (scaricare tutto il repo, es. `hf download Qwen/Qwen3-VL-2B-Instruct --local-dir ...`) | ~4 GB |
+
+   - Il text encoder **nvfp4** va al meglio sulle GPU NVIDIA **Blackwell (RTX 50xx)**; sulle altre e' emulato. Alternativa: `qwen3vl_32b_minimax_h3_int8_convrot.safetensors` (https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/text_encoders/qwen3vl_32b_minimax_h3_int8_convrot.safetensors, ~27 GB): in quel caso cambiare il file nel CLIPLoader "CLIP H3".
+   - Esistono copie con lo stesso nome ma hash diverso (es. Abiray): usare gli indirizzi sopra.
+   - `minimax_h3_vae_decoder.engine` (decoder TensorRT, OPZIONALE): **non si scarica e non si copia**, va compilato sulla GPU di destinazione (nota "DECODE VELOCE" nel workflow). Se manca, collegare il VAE video normale al decode.
    - Non servono: `zzz_minimax_h3_turbo_v4_step600_pruned208.safetensors` (nodo in bypass).
 4. **Pacchetti di nodi richiesti:** ComfyUI recente con i nodi MiniMax H3 nativi (testato su 0.44), ComfyUI-VideoHelperSuite (VHS_VideoCombine), comfyui-kjnodes (anteprima taeh3), ComfyUI-H3VAE_TRT (solo per il decoder TensorRT). In bypass/inutilizzati, installarli solo se richiesti all'apertura: plaguekind ComfyUI-H3-SLA-Attention (SLA), zzz_ripple_long (PESO ANCORE), zzz_h3_transition_timing (DURATA TRANSIZIONE, residuo). Python: `transformers` (per Qwen3-VL) e `ffmpeg`/`ffprobe` nel PATH.
 5. **Verifica dopo l'installazione:** riavviare ComfyUI, F5, aprire il workflow da `example_workflows/`, controllare con `panel_query_graph` sul nodo Director che `zona_automatica`, `stadi_automatici`, `ancora_B_automatica`, `automatico` siano true e `transition_zone` = medium; caricare due video e fare un run di prova. Se mancano nodi, installarli con il Manager; se mancano modelli, vedi punto 2-3.
