@@ -25,7 +25,7 @@ from comfy.ldm.minimax.model import FRAME_PER_TOKEN
 from comfy_extras import nodes_minimax_h3 as h3
 
 _OWNER = "ZZZ H3 Transition Director"
-VERSION = "v2.17"  # alzare a ogni modifica del nodo e annotare qui sotto
+VERSION = "v2.18"  # alzare a ogni modifica del nodo e annotare qui sotto
 # v2.0  base: timeline A/B, ancore, prompt a segmenti, audio originale in dissolvenza nell'Assemble
 # v2.1  2026-11-16  numero di versione nel titolo e nel report; audio solo dal Director (niente loader esterni)
 # v2.2  2026-11-16  prompt AUTOMATICO opzionale: caption di A e B (Qwen3-VL) + una riga 'idea_transizione'; audio automatico
@@ -44,6 +44,7 @@ VERSION = "v2.17"  # alzare a ogni modifica del nodo e annotare qui sotto
 # v2.15 2026-11-16  transition_zone: short 24 / medium 64 / large 96 frame + buco, e mai oltre il 70% di A+B (clip corte)
 # v2.16 2026-11-16  tetto per livello (short 35% / medium 55% / large 80% di A+B): con clip corte i livelli restano diversi
 # v2.17 2026-11-16  UNIVERSALE per scene/soggetti diversi: niente piu' 'same subject/same place'; se la zona non ha segmenti nasce da sola una transizione a stadi (GLOBAL PROMPT tradotto in inglese, o generica A -> B)
+# v2.18 2026-11-16  location diverse: frase SPAZIO CONTINUO (i due luoghi sono un unico ambiente collegato, la camera ci passa attraverso, niente flash/sfocatura)
 FPS = h3.FPS  # 24: la timeline lavora nei frame del modello
 _NOWIN = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 VIDEO_EXT = (".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v")
@@ -441,6 +442,11 @@ PACE = ("All motion happens at natural real-time speed, constant from the first 
         "no time remapping, no acceleration to catch up; every movement keeps a steady, natural pace.")
 
 
+SPACE_JOIN = ("If the two shots are in different places, they are parts of one continuous connected environment: the space of the first place "
+              "extends seamlessly into the next one, and the camera travels through the space between them in one fluid move, "
+              "with every surface, wall and floor continuing naturally from one place to the other, without any flash, blur, wipe or dissolve.")
+
+
 def auto_texts(A, B, idea, a_audio, b_audio):
     """prompt automatico: descrive A e l'inizio di B con il captioner locale (in cache) + una riga di idea."""
     from .caption import zzz_VideoCaption
@@ -448,7 +454,7 @@ def auto_texts(A, B, idea, a_audio, b_audio):
     cap_a = cap(A, 4, "")[0]
     cap_b = cap(B[:max(8, min(len(B), 48))], 3, "")[0]
     cuts_ok = bool(_CUT_WORDS.search(idea or ""))   # un taglio c'e' solo se l'utente lo scrive espressamente
-    scena = ("" if cuts_ok else NO_CUT + " ") + PACE + " The shot starts like this: %s" % cap_a.strip()
+    scena = ("" if cuts_ok else NO_CUT + " " + SPACE_JOIN + " ") + PACE + " The shot starts like this: %s" % cap_a.strip()
     idea_en = _to_english(idea)
     if idea_en:
         scena += " The transition: %s" % idea_en.rstrip(".")

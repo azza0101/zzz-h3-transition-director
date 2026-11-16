@@ -97,6 +97,7 @@ class TransitionDirector {
     btn("◆ FRAME RIFERIMENTO TRANSIZIONE", "k", () => this.anchorFromFrame(), "Usa il frame sotto il cursore come immagine di riferimento (ancora) della transizione");
     btn("🖼 Ancora da file", "k", () => this.anchorFromFile(), "Carica un'immagine guida al punto del cursore");
     btn("✎ + Prompt", "p", () => this.addPrompt(), "Aggiunge un segmento di prompt al cursore (min 0,5 s)");
+    btn("✂ Dividi al cursore", "", () => this.splitAtHead(), "Un video solo: lo divide al cursore in A e B (stesso file) con 1 s di spazio. Poi rifila le parti e spostale: si rigenera solo il raccordo");
     this.snapBtn = btn("", "", () => { this.data.snap_enabled = this.data.snap_enabled === false; this.updateSnap(); this.save(); }, "Aggancia i bordi delle clip quando sono vicini (B attaccata ad A = taglio). Sovrapposta o lontana: il modo si calcola da solo");
     this.updateSnap();
     btn("⤢ Adatta", "", () => this.fit(), "Adatta lo zoom alla timeline");
@@ -560,6 +561,23 @@ class TransitionDirector {
     if (f.type.startsWith("image/")) { const name = await this.upload(f); const an = { id: uid(), frame: this.f(h.x), image: name }; this.data.anchors.push(an); this.save(); return; }
     const k = h.item === "a" || h.item === "b" ? h.item : (this.info.a ? "b" : "a");
     const name = await this.upload(f); this.setVideo(k === "a" ? "video_a" : "video_b", name, true);
+  }
+  async splitAtHead() {   // un video unico -> A (prima del cursore) e B (dopo), stesso file; il resto lo decide la timeline
+    if (!this.info.a) { this.err = "Carica prima il video su A, poi metti il cursore dove vuoi dividerlo."; this.updInfo(); return; }
+    const a = this.data.a, [pa, ea] = this.span("a"), h = this.head;
+    const ctx = W(this.node, "contesto")?.value ?? 13, m = Math.max(5, Math.min(ctx, 13));
+    if (h <= pa + m || h >= ea - m) { this.err = `Metti il cursore dentro la clip A, ad almeno ${m} frame dai bordi.`; this.updInfo(); return; }
+    const cut = this.srcFrame("a", h), name = this.vname("video_a"), w = W(this.node, "video_b"); if (!w) return;
+    const vals = w.options?.values;
+    if (Array.isArray(vals) && !vals.includes(name)) { try { vals.push(name); } catch (_) { /* */ } }
+    w.value = name;
+    if (w.value !== name) { try { await app.refreshComboInNodes?.(); } catch (_) { /* */ } w.value = name; }
+    if (w.value !== name) { this.err = "Non riesco a impostare B: premi F5 e riprova."; this.updInfo(); return; }
+    const out = a.out;
+    this.data.a = { in: a.in, out: cut, pos: pa };
+    this.data.b = { in: cut, out, pos: h + 24 };   // 1 s di spazio: si rifila e si sposta a mano
+    this.info.b = null; this._names = [name, name].join("|");
+    this.err = null; this.refreshInfo(true, true); this.node.setDirtyCanvas?.(true, true);
   }
   clearVideo(wname) {   // toglie il video dalla traccia (il nodo restera' da completare prima del run)
     const w = W(this.node, wname); if (!w) return;

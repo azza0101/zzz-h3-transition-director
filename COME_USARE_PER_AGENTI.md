@@ -1,6 +1,6 @@
 # ZZZ H3 Transition Director — guida per agenti (MCP / assistenti)
 
-Versione del nodo: **v2.17** (il numero e' nel titolo del nodo e nella prima riga del report; storico in testa a `director.py`).
+Versione del nodo: **v2.18** (il numero e' nel titolo del nodo e nella prima riga del report; storico in testa a `director.py`).
 Workflow di riferimento: `zzz_H3_TRANSITION_DIRECTOR_v2_TaoMate4`.
 
 > Stato di validazione (2026-11-16, transizione telo verde -> treno, 117 frame, 24 fps, stesso seed):
@@ -12,6 +12,7 @@ Workflow di riferimento: `zzz_H3_TRANSITION_DIRECTOR_v2_TaoMate4`.
 
 **Si fa a mano (utente o agente):**
 1. Caricare A e B (schede Load video in cima alla timeline) e metterli sulla timeline: attaccati, sovrapposti o distanti. Il modo si calcola da solo; piu' distanti = piu' strada da generare.
+   **Un video solo:** caricarlo su A, mettere il cursore nel punto da rifare e premere **✂ Dividi al cursore**: B diventa lo stesso file dal cursore in poi, 1 s piu' avanti. Poi rifilare la fine di A e l'inizio di B (la parte da togliere) e spostare B: si rigenera solo il raccordo. Per un agente: `video_b` = `video_a`, `a.out` = `b.in` = frame del taglio (frame sorgente a 24 fps), `b.pos` dove deve ripartire.
 2. (facoltativo) Una riga nel GLOBAL PROMPT (`idea_transizione`, con `automatico` acceso).
 3. Pochi segmenti di prompt sulla timeline, uno per ogni cosa che succede: il CAMBIAMENTO (es. "il telo cade e rivela il treno"), l'AZIONE del soggetto, la CAMERA. Non serve spezzarli a mano.
 4. Le scritte esatte che devono comparire (es. `'ETR 1000'` sul treno) vanno nel testo: H3 le inventa se non le vede.
@@ -25,6 +26,8 @@ Workflow di riferimento: `zzz_H3_TRANSITION_DIRECTOR_v2_TaoMate4`.
 - Sfumatura verso B 8 frame (non 16: con 16 gli ultimi frame "recuperano" verso B).
 
 **Transizione di default (v2.17):** se sulla zona generata non ci sono segmenti (meno del 50% coperto), il Director crea da solo un segmento su tutta la zona e lo spezza in stadi: il testo e' il GLOBAL PROMPT (tradotto in inglese in automatico, qualunque lingua), oppure, se vuoto, "la scena del primo shot si trasforma progressivamente nella scena del successivo: <descrizione di B>". Vale anche per A e B con soggetti/luoghi DIVERSI (prima i testi automatici dicevano "same subject, same place" e H3 faceva uno split-screen).
+
+**Location diverse (v2.18):** il prompt automatico dice che i due luoghi sono UN UNICO AMBIENTE collegato e che la camera ci passa attraverso (niente flash/sfocatura/tendina/dissolvenza). Nel GLOBAL PROMPT descrivere il movimento come "unico, continuo e fluido, a velocita' costante" e nominare i due luoghi che si collegano ("l'hangar prosegue nell'ufficio"); evitare "velocemente"/"svelando": producono una panoramica a frusta sfocata con ministacco. Testato: FX3 donna con ombrello (hangar) -> donna alla scrivania (ufficio), zona medium = panoramica continua con i due luoghi fusi (h3_director_v2_00034).
 
 **Regola di scrittura (misurata):** descrivere SEMPRE in POSITIVO cosa compare e dove ("la parte alta mostra il cielo nero e il treno"), mai negazioni di posizione ("niente in alto"): la frase negativa ha prodotto una fascia di green in alto.
 
