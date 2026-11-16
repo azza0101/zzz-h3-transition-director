@@ -129,6 +129,7 @@ H3 genera sempre a **24 fps**: non prenderli dai video. Il Director legge gli fp
 
 ## 9. INSTALLAZIONE SU UN ALTRO PC (istruzioni per l'agente)
 
+0. **Accesso:** il repository e' PRIVATO. Se `git clone` chiede credenziali: `gh auth login` (account dell'utente) e poi `gh repo clone azza0101/zzz-h3-transition-director`.
 1. **Nodo:** `git clone <url di questo repository>` dentro `ComfyUI/custom_nodes/` (cartella `zzz_h3_transition_director`). Aggiornare: `git pull` + riavvio di ComfyUI + F5. Il workflow e' in `example_workflows/` e compare nei Template di ComfyUI sotto questo nodo.
 2. **Prima di scaricare qualunque modello: CERCARE se c'e' gia'** sul PC (cartelle `models/` di ComfyUI e i percorsi in `extra_model_paths.yaml`), anche con nome diverso (stesso modello in altra quantizzazione). Scaricare SOLO cio' che manca, con il tool di download di ComfyUI (`download_model`), nella cartella giusta. Non inventare URL: cercare il nome esatto del file (HuggingFace / Civitai) e chiedere all'utente se non si trova.
 3. **Modelli usati dal workflow** (nome file -> tipo di cartella):
@@ -142,4 +143,6 @@ H3 genera sempre a **24 fps**: non prenderli dai video. Il Director legge gli fp
    - `Qwen-VL/Qwen3-VL-2B-Instruct` (cartella transformers) -> `models/LLM/Qwen-VL/` (solo per `automatico` = prompt automatico).
    - Non servono: `zzz_minimax_h3_turbo_v4_step600_pruned208.safetensors` (nodo in bypass).
 4. **Pacchetti di nodi richiesti:** ComfyUI recente con i nodi MiniMax H3 nativi (testato su 0.44), ComfyUI-VideoHelperSuite (VHS_VideoCombine), comfyui-kjnodes (anteprima taeh3), ComfyUI-H3VAE_TRT (solo per il decoder TensorRT). In bypass/inutilizzati, installarli solo se richiesti all'apertura: plaguekind ComfyUI-H3-SLA-Attention (SLA), zzz_ripple_long (PESO ANCORE), zzz_h3_transition_timing (DURATA TRANSIZIONE, residuo). Python: `transformers` (per Qwen3-VL) e `ffmpeg`/`ffprobe` nel PATH.
-5. **Avvio consigliato:** `--max-upload-size 4096` per caricare video grandi dal pulsante Load video.
+5. **Verifica dopo l'installazione:** riavviare ComfyUI, F5, aprire il workflow da `example_workflows/`, controllare con `panel_query_graph` sul nodo Director che `zona_automatica`, `stadi_automatici`, `ancora_B_automatica`, `automatico` siano true e `transition_zone` = medium; caricare due video e fare un run di prova. Se mancano nodi, installarli con il Manager; se mancano modelli, vedi punto 2-3.
+6. **Aggiornamenti:** quando l'utente dice "cerca aggiornamenti del Transition Director": `git -C ComfyUI/custom_nodes/zzz_h3_transition_director pull`, leggere le righe nuove dello storico in testa a `director.py`, riavviare ComfyUI, F5, ripetere la verifica del punto 5 (i campi nuovi possono spostare i valori salvati: controllare i booleani).
+7. **Avvio consigliato:** `--max-upload-size 4096` per caricare video grandi dal pulsante Load video.
