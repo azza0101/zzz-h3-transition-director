@@ -25,7 +25,7 @@ from comfy.ldm.minimax.model import FRAME_PER_TOKEN
 from comfy_extras import nodes_minimax_h3 as h3
 
 _OWNER = "ZZZ H3 Transition Director"
-VERSION = "v2.25"  # alzare a ogni modifica del nodo e annotare qui sotto
+VERSION = "v2.27"  # alzare a ogni modifica del nodo e annotare qui sotto
 # v2.0  base: timeline A/B, ancore, prompt a segmenti, audio originale in dissolvenza nell'Assemble
 # v2.1  2026-11-16  numero di versione nel titolo e nel report; audio solo dal Director (niente loader esterni)
 # v2.2  2026-11-16  prompt AUTOMATICO opzionale: caption di A e B (Qwen3-VL) + una riga 'idea_transizione'; audio automatico
@@ -52,6 +52,8 @@ VERSION = "v2.25"  # alzare a ogni modifica del nodo e annotare qui sotto
 # v2.23 2026-11-16  ANALISI CAMERA completa (optical flow + RANSAC): pan, tilt, zoom/carrello, rotazione, accelera/rallenta, su fine A e inizio B; il prompt descrive come il movimento di A diventa quello di B
 # v2.24 2026-11-16  frase camera: il movimento della transizione (anche un whip pan da camera ferma) puo' cambiare velocita', ma parte da A e arriva a B senza scatti/stop
 # v2.25 2026-11-16  FUSIONE (clip sovrapposte): nella zona H3 parte dalla dissolvenza dei frame veri A->B e li rigenera solo in parte (fusione = quota rigenerata), cosi' i movimenti e i luoghi delle due clip si fondono
+# v2.26 2026-11-16  descrizioni automatiche SOLO aspetto (la caption inventava zoom eseguiti da H3); INQUADRATURA di fine A / inizio B e passaggio graduale tra le due; traduzione da regia
+# v2.27 2026-11-16  camera misurata anche sulla CODA di A e sulla TESTA di B che la zona rigenera (prima solo sui frame fuori zona: se la zona mangiava il pan di A risultava 'ferma')
 FPS = h3.FPS  # 24: la timeline lavora nei frame del modello
 _NOWIN = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 VIDEO_EXT = (".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v")
@@ -554,12 +556,14 @@ def motion_text(c, dy=None):
     return " and ".join(parts) + tail
 
 
-def auto_texts(A, B, idea, a_audio, b_audio, mA=None, mB=None):
+def auto_texts(A, B, idea, a_audio, b_audio, mA=None, mB=None, tA=None, hB=None):
     """prompt automatico: descrive A e l'inizio di B con il captioner locale (in cache) + una riga di idea."""
-    from .caption import zzz_VideoCaption
-    cap = zzz_VideoCaption().run
-    cap_a = cap(A, 4, "")[0]
-    cap_b = cap(B[:max(8, min(len(B), 48))], 3, "")[0]
+    from .caption import scene_caption, shot_size
+    cap_a = scene_caption(A, 4)
+    cap_b = scene_caption(B[:max(8, min(len(B), 48))], 3)
+    fa = mA if (mA is not None and len(mA)) else A[-1:]
+    fb = mB if (mB is not None and len(mB)) else B[:1]
+    shot_a, shot_b = shot_size(fa[-1:]), shot_size(fb[:1])
     cuts_ok = bool(_CUT_WORDS.search(idea or ""))   # un taglio c'e' solo se l'utente lo scrive espressamente
     scena = ("" if cuts_ok else NO_CUT + " " + SPACE_JOIN + " ") + PACE + " The shot starts like this: %s" % cap_a.strip()
     idea_en = _to_english(idea)
@@ -570,11 +574,26 @@ def auto_texts(A, B, idea, a_audio, b_audio, mA=None, mB=None):
     cA = camera_analysis(mA if mA is not None else A[-12:])
     cB = camera_analysis(mB if mB is not None else B[:12])
     ma, mb = motion_text(cA), motion_text(cB)
-    # come il movimento di A deve diventare quello di B, senza cambi bruschi di direzione o velocita'
-    scena += (" Camera movement: at the start the camera is %s; from there it flows into the transition move (which may build up or "
-              "ease off in speed as the transition requires) and by the end it is %s, exactly like the camera when the next shot begins; "
-              "the camera motion stays continuous the whole time, with no jerk, no sudden stop and no reversal of direction."
-              % (ma or "still", mb or "still, settling smoothly into the framing of the next shot"))
+    # la zona puo' rigenerare la CODA di A e la TESTA di B: il loro movimento originale va detto, o H3 non lo sa
+    mt = motion_text(camera_analysis(tA)) if tA is not None and len(tA) >= 3 else None
+    mh = motion_text(camera_analysis(hB)) if hB is not None and len(hB) >= 3 else None
+    steps = ["at the start the camera is %s" % (ma or "still")]
+    if mt and mt != ma:
+        steps.append("then, as in the original first shot, it is %s" % mt)
+    if mh and mh != mb and mh != mt:
+        steps.append("as the next shot comes in it is %s" % mh)
+    steps.append("by the end it is %s, exactly like the camera when the next shot continues"
+                 % (mb or "still, settling smoothly into the framing of the next shot"))
+    scena += (" Camera movement, taken from the original footage: " + "; ".join(steps) + ". The transition move links these "
+              "continuously (it may build up or ease off in speed), with no jerk, no sudden stop and no reversal of direction.")
+    print("[%s] camera: contesto A = %s | coda A rigenerata = %s | testa B rigenerata = %s | contesto B = %s"
+          % (_OWNER, ma or "ferma", mt or "-", mh or "-", mb or "ferma"))
+    if shot_a and shot_b and shot_a != shot_b:   # cambio di inquadratura: graduale su tutta la transizione, mai a scatto
+        scena += (" The framing changes gradually and continuously from a %s at the start to a %s at the end, spread evenly over "
+                  "the whole transition, never in one jump." % (shot_a, shot_b))
+    elif shot_a:
+        scena += " The framing stays a %s throughout." % shot_a
+    print("[%s] inquadratura: fine A = %s, inizio B = %s" % (_OWNER, shot_a or "?", shot_b or "?"))
     if abs(cA["dy"]) < 0.004 and abs(cB["dy"]) < 0.004:   # nessun movimento verticale ai due capi: niente tilt inventati
         scena += (" The camera stays level at the same height for the whole shot and moves only sideways (pan); "
                   "it never tilts up or down and never rises or drops.")
@@ -757,7 +776,9 @@ class zzz_H3_TransitionDirector:
             ia0 = max(0, p["z0"] - p["pa"])     # frame reali di A subito prima della zona, di B subito dopo
             ib0 = max(0, p["z1"] - p["pb"])
             scena, finale, overall_soundscape, fill, trans = auto_texts(A, B, idea_transizione, ia["has_audio"], ib["has_audio"],
-                                                                        A[max(0, ia0 - 12):ia0], B[ib0:ib0 + 12])
+                                                                        A[max(0, ia0 - 12):ia0], B[ib0:ib0 + 12],
+                                                                        A[max(ia0, len(A) - 12):] if ia0 < len(A) else None,
+                                                                        B[:min(12, ib0)] if ib0 > 0 else None)
             # nessun segmento sulla zona: la transizione stessa diventa un segmento (a stadi) su tutta la zona
             covered = sum(max(0, min(int(s.get("end", 0)), p["z1"]) - max(int(s.get("start", 0)), p["z0"])) for s in tl.get("prompts", []))
             if covered < 0.5 * (p["z1"] - p["z0"]):

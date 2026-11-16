@@ -42,7 +42,7 @@ def _cache():
         return {}
 
 
-def _caption(pil_frames):
+def _caption(pil_frames, prompt=None, max_new_tokens=220):
     import comfy.model_management as mm
     from transformers import AutoProcessor, AutoModelForImageTextToText
     dev = mm.get_torch_device()
@@ -52,11 +52,11 @@ def _caption(pil_frames):
     model = AutoModelForImageTextToText.from_pretrained(path, dtype=torch.bfloat16, device_map=str(dev), attn_implementation="sdpa")
     try:
         content = [{"type": "image", "image": im} for im in pil_frames]
-        content.append({"type": "text", "text": _PROMPT.format(n=len(pil_frames))})
+        content.append({"type": "text", "text": (prompt or _PROMPT).format(n=len(pil_frames))})
         inp = proc.apply_chat_template([{"role": "user", "content": content}], tokenize=True, add_generation_prompt=True,
                                        return_dict=True, return_tensors="pt").to(model.device)
         with torch.inference_mode():
-            out = model.generate(**inp, max_new_tokens=220, do_sample=False)
+            out = model.generate(**inp, max_new_tokens=max_new_tokens, do_sample=False)
         return proc.batch_decode(out[:, inp["input_ids"].shape[1]:], skip_special_tokens=True)[0].strip()
     finally:
         del model, proc
@@ -82,8 +82,9 @@ def translate_en(text):
     model = AutoModelForImageTextToText.from_pretrained(path, dtype=torch.bfloat16, device_map=str(dev), attn_implementation="sdpa")
     try:
         msg = [{"role": "user", "content": [{"type": "text", "text":
-               "Translate this video direction into natural English. If it is already English, repeat it unchanged. "
-               "Keep every detail, add nothing. Output only the translation.\n\n" + t}]}]
+               "Translate this film/camera direction into clear, natural English as a director would write it "
+               "(for example 'movimento unico' = 'one single continuous movement', 'stacco' = 'cut'). "
+               "If it is already English, repeat it unchanged. Keep every detail, add nothing. Output only the translation.\n\n" + t}]}]
         inp = proc.apply_chat_template(msg, tokenize=True, add_generation_prompt=True, return_dict=True, return_tensors="pt").to(model.device)
         with torch.inference_mode():
             out = model.generate(**inp, max_new_tokens=200, do_sample=False)
@@ -100,6 +101,58 @@ def translate_en(text):
         pass
     print("[zzz translate] %s -> %s" % (t, res))
     return res
+
+
+_SCENE_PROMPT = ("These are {n} frames from one short video shot. Write ONE paragraph (max 90 words) in English describing ONLY "
+                 "what is visible: the people and how they look (clothes, hair, accessories), the place and its objects, the light and "
+                 "the colours. Do NOT describe camera movement, zoom, framing changes or actions over time. Output only the paragraph.")
+_SHOT_PROMPT = ("Look at this video frame and answer with exactly one of these shot sizes and nothing else: "
+                "extreme close-up, close-up, medium close-up, medium shot, medium wide shot, wide shot.")
+
+
+def _pil_from(images, n):
+    from PIL import Image
+    k = int(images.shape[0])
+    idx = sorted({int(round(i)) for i in np.linspace(0, k - 1, max(1, int(n)))})
+    out = []
+    for i in idx:
+        im = Image.fromarray((images[i, ..., :3].clamp(0, 1).cpu().numpy() * 255).astype(np.uint8))
+        im.thumbnail((640, 640))
+        out.append(im)
+    return out
+
+
+def _cached(key_prefix, pil, prompt, max_new_tokens):
+    h = hashlib.sha1()
+    for im in pil:
+        h.update(im.tobytes())
+    key = "%s|%s" % (key_prefix, h.hexdigest())
+    c = _cache()
+    if key in c:
+        return c[key]
+    txt = _caption(pil, prompt, max_new_tokens).strip()
+    c[key] = txt
+    try:
+        with open(_cache_file(), "w", encoding="utf-8") as f:
+            json.dump(c, f, ensure_ascii=False, indent=1)
+    except Exception:
+        pass
+    print("[zzz VideoCaption %s] %s" % (key_prefix, txt))
+    return txt
+
+
+def scene_caption(images, n=4):
+    """descrizione SOLO di aspetto/luogo/luce (niente camera ne' azioni: il movimento lo misura il Director)."""
+    return _cached("scene1", _pil_from(images, n), _SCENE_PROMPT, 180)
+
+
+def shot_size(image):
+    """dimensione dell'inquadratura di un frame: close-up / medium shot / wide shot ..."""
+    t = _cached("shot1", _pil_from(image, 1), _SHOT_PROMPT, 8).lower().strip(" .")
+    for k in ("extreme close-up", "medium close-up", "close-up", "medium wide shot", "medium shot", "wide shot"):
+        if k in t:
+            return k
+    return t[:30]
 
 
 class zzz_VideoCaption:
