@@ -1,6 +1,6 @@
 # ZZZ H3 Transition Director — guida per agenti (MCP / assistenti)
 
-Versione del nodo: **v2.19** (il numero e' nel titolo del nodo e nella prima riga del report; storico in testa a `director.py`).
+Versione del nodo: **v2.25** (il numero e' nel titolo del nodo e nella prima riga del report; storico in testa a `director.py`).
 Workflow di riferimento: `zzz_H3_TRANSITION_DIRECTOR_v2_TaoMate4`.
 
 > Stato di validazione (2026-11-16, transizione telo verde -> treno, 117 frame, 24 fps, stesso seed):
@@ -28,6 +28,11 @@ Workflow di riferimento: `zzz_H3_TRANSITION_DIRECTOR_v2_TaoMate4`.
 **Transizione di default (v2.17):** se sulla zona generata non ci sono segmenti (meno del 50% coperto), il Director crea da solo un segmento su tutta la zona e lo spezza in stadi: il testo e' il GLOBAL PROMPT (tradotto in inglese in automatico, qualunque lingua), oppure, se vuoto, "la scena del primo shot si trasforma progressivamente nella scena del successivo: <descrizione di B>". Vale anche per A e B con soggetti/luoghi DIVERSI (prima i testi automatici dicevano "same subject, same place" e H3 faceva uno split-screen).
 
 **Location diverse (v2.18):** il prompt automatico dice che i due luoghi sono UN UNICO AMBIENTE collegato e che la camera ci passa attraverso (niente flash/sfocatura/tendina/dissolvenza). Nel GLOBAL PROMPT descrivere il movimento come "unico, continuo e fluido, a velocita' costante" e nominare i due luoghi che si collegano ("l'hangar prosegue nell'ufficio"); evitare "velocemente"/"svelando": producono una panoramica a frusta sfocata con ministacco. v2.19: il luogo nuovo entra SOLO dal lato verso cui gira la camera e gli sfondi non si fondono sul posto (la v2.18 'unico ambiente' dava una dissolvenza brutta dietro al soggetto e un resto dell'ombrello all'inizio di B). Testato: FX3 donna con ombrello (hangar) -> donna alla scrivania (ufficio), GLOBAL PROMPT 'whip pan verso destra, rapido ma continuo, con il mosso naturale... l'ufficio e' la stanza accanto' = whip pan collegato senza dissolvenze (h3_director_v2_00035).
+
+**Analisi della camera (v2.23, automatica):** sugli ultimi 12 frame veri di A prima della zona e sui primi 12 di B dopo la zona il Director misura (optical flow + RANSAC) pan, tilt, zoom/carrello, rotazione e se accelera o rallenta, e scrive nel prompt "all'inizio la camera sta ...; durante la transizione questo movimento diventa con continuita' ... come all'inizio dello shot successivo, senza cambi bruschi di direzione o velocita'". Se ai due capi non c'e' movimento verticale aggiunge "camera in bolla, solo laterale, mai tilt". Il report/log mostra le misure (riga "movimento camera misurato"). fps: frame piu' vicino (minterpolate tolto: smearing sui movimenti veloci). Clip con video che parte dopo 0 s (FX3/transcodifiche): letto dal primo frame vero (v2.21).
+
+**Luoghi diversi con zona SHORT (validato dall'utente, h3_director_v2_00047, 2026-11-16):** B **staccata** da A di ~16 frame (modo ponte) + `transition_zone` short -> la zona automatica sale a ~38 frame (1.6 s) e H3 fa UN pan continuo in cui i due luoghi si mescolano (hangar -> ambiente misto -> ufficio). GLOBAL PROMPT minimo: "la camera fa un movimento unico verso destra". Con B attaccata (taglio, zona 25 fr) o con zona troppo corta H3 fa uno stacco o una scia di mosso.
+**Fusione (`fusione`, v2.25, solo con A e B SOVRAPPOSTE):** H3 parte dalla dissolvenza dei frame veri A->B e rigenera solo quella quota. A 0.8 resta una DOPPIA ESPOSIZIONE (trasparenza, sgradita): da provare 0.9-0.95; per ora la via buona e' quella sopra (B staccata). Se il modo non e' sovrapposta la fusione e' ignorata (avviso nel report).
 
 **Regola di scrittura (misurata):** descrivere SEMPRE in POSITIVO cosa compare e dove ("la parte alta mostra il cielo nero e il treno"), mai negazioni di posizione ("niente in alto"): la frase negativa ha prodotto una fascia di green in alto.
 

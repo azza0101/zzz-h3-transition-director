@@ -25,7 +25,7 @@ from comfy.ldm.minimax.model import FRAME_PER_TOKEN
 from comfy_extras import nodes_minimax_h3 as h3
 
 _OWNER = "ZZZ H3 Transition Director"
-VERSION = "v2.19"  # alzare a ogni modifica del nodo e annotare qui sotto
+VERSION = "v2.25"  # alzare a ogni modifica del nodo e annotare qui sotto
 # v2.0  base: timeline A/B, ancore, prompt a segmenti, audio originale in dissolvenza nell'Assemble
 # v2.1  2026-11-16  numero di versione nel titolo e nel report; audio solo dal Director (niente loader esterni)
 # v2.2  2026-11-16  prompt AUTOMATICO opzionale: caption di A e B (Qwen3-VL) + una riga 'idea_transizione'; audio automatico
@@ -46,6 +46,12 @@ VERSION = "v2.19"  # alzare a ogni modifica del nodo e annotare qui sotto
 # v2.17 2026-11-16  UNIVERSALE per scene/soggetti diversi: niente piu' 'same subject/same place'; se la zona non ha segmenti nasce da sola una transizione a stadi (GLOBAL PROMPT tradotto in inglese, o generica A -> B)
 # v2.18 2026-11-16  location diverse: frase SPAZIO CONTINUO (i due luoghi sono un unico ambiente collegato, la camera ci passa attraverso, niente flash/sfocatura)
 # v2.19 2026-11-16  SPACE_JOIN rivisto: il luogo nuovo entra SOLO dal lato verso cui gira la camera, gli sfondi non si fondono sul posto (niente dissolvenza dietro il soggetto), alla fine solo il contenuto di B
+# v2.20 2026-11-16  fps: interpolazione a compensazione di movimento (ffmpeg minterpolate) al posto del frame duplicato; MOVIMENTO DI CAMERA misurato su fine di A e inizio di B e scritto nel prompt (niente camera ferma prima che B riparta)
+# v2.21 2026-11-16  clip con video che parte dopo 0 (start_time, tipico di FX3/transcodifiche): si legge dal primo frame vero, niente primi frame congelati; audio allineato allo stesso istante
+# v2.22 2026-11-16  fps: tolto minterpolate (smearing sui movimenti veloci), torna il frame piu' vicino (+ lineare oltre 1 fps); camera ORIZZONTALE: se A e B non hanno movimento verticale, la camera resta in bolla e non inclina
+# v2.23 2026-11-16  ANALISI CAMERA completa (optical flow + RANSAC): pan, tilt, zoom/carrello, rotazione, accelera/rallenta, su fine A e inizio B; il prompt descrive come il movimento di A diventa quello di B
+# v2.24 2026-11-16  frase camera: il movimento della transizione (anche un whip pan da camera ferma) puo' cambiare velocita', ma parte da A e arriva a B senza scatti/stop
+# v2.25 2026-11-16  FUSIONE (clip sovrapposte): nella zona H3 parte dalla dissolvenza dei frame veri A->B e li rigenera solo in parte (fusione = quota rigenerata), cosi' i movimenti e i luoghi delle due clip si fondono
 FPS = h3.FPS  # 24: la timeline lavora nei frame del modello
 _NOWIN = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 VIDEO_EXT = (".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v")
@@ -72,7 +78,7 @@ def list_videos():
 @functools.lru_cache(maxsize=64)
 def _probe_cached(path, mtime):
     r = subprocess.run([_ffprobe(), "-v", "error", "-show_entries",
-                        "stream=codec_type,r_frame_rate,avg_frame_rate,nb_frames,duration,width,height:stream_tags=rotate:stream_side_data=rotation:format=duration",
+                        "stream=codec_type,r_frame_rate,avg_frame_rate,nb_frames,duration,start_time,width,height:stream_tags=rotate:stream_side_data=rotation:format=duration",
                         "-of", "json", path], capture_output=True, text=True, creationflags=_NOWIN, timeout=60)
     j = json.loads(r.stdout or "{}")
     v = next((s for s in j.get("streams", []) if s.get("codec_type") == "video"), {})
@@ -106,7 +112,7 @@ def _probe_cached(path, mtime):
     if abs(rot) % 180 == 90:
         w_, h_ = h_, w_
     return {"fps": fps, "frames": frames, "duration": dur, "width": w_,
-            "height": h_, "rotation": rot, "has_audio": has_audio,
+            "height": h_, "rotation": rot, "has_audio": has_audio, "vstart": max(0.0, float(v.get("start_time") or 0)),
             "tl_frames": int(math.floor(dur * FPS + 1e-6))}
 
 
@@ -117,6 +123,15 @@ def probe(name):
     return path, _probe_cached(path, os.path.getmtime(path))
 
 
+def _vstart(path):
+    """istante del primo frame video (secondi). Molte clip (FX3, transcodifiche) partono a 0.2-0.3 s: leggere da 0 con il filtro fps
+    duplica il primo frame per tutto quel tempo (primi frame congelati)."""
+    try:
+        return _probe_cached(path, os.path.getmtime(path)).get("vstart", 0.0)
+    except Exception:
+        return 0.0
+
+
 def read_frames(path, start, count, W, H, crop="center"):
     """count frame a 24 fps da `start` (frame timeline della clip), ridimensionati W x H. -> tensor [N,H,W,3] float."""
     if count <= 0:
@@ -125,7 +140,7 @@ def read_frames(path, start, count, W, H, crop="center"):
         vf = "fps=%d,scale=%d:%d:force_original_aspect_ratio=increase:flags=lanczos,crop=%d:%d" % (FPS, W, H, W, H)
     else:
         vf = "fps=%d,scale=%d:%d:flags=lanczos" % (FPS, W, H)
-    t = max(0.0, start / FPS)
+    t = max(0.0, start / FPS) + _vstart(path)
     cmd = [_ffmpeg(), "-v", "error", "-ss", "%.6f" % t, "-i", path, "-map", "0:v:0", "-vf", vf,
            "-frames:v", str(count), "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
     r = subprocess.run(cmd, capture_output=True, creationflags=_NOWIN)
@@ -144,7 +159,7 @@ def read_frames(path, start, count, W, H, crop="center"):
 def read_audio(path, start, count, sr=48000):
     """audio stereo dei `count` frame timeline da `start`. -> tensor [2, samples] (zeri se il file non ha audio)."""
     n = int(round(count / FPS * sr))
-    cmd = [_ffmpeg(), "-v", "error", "-ss", "%.6f" % (start / FPS), "-i", path, "-t", "%.6f" % (count / FPS),
+    cmd = [_ffmpeg(), "-v", "error", "-ss", "%.6f" % (start / FPS + _vstart(path)), "-i", path, "-t", "%.6f" % (count / FPS),
            "-vn", "-f", "f32le", "-ac", "2", "-ar", str(sr), "-"]
     r = subprocess.run(cmd, capture_output=True, creationflags=_NOWIN)
     a = np.frombuffer(r.stdout, np.float32) if r.returncode == 0 else np.zeros(0, np.float32)
@@ -450,7 +465,96 @@ SPACE_JOIN = ("If the two shots are in different places, they are neighbouring p
               "and at the end only the content of the next shot is in the frame, exactly as in the next shot.")
 
 
-def auto_texts(A, B, idea, a_audio, b_audio):
+def camera_analysis(frames):
+    """movimento di camera tra frame consecutivi: flusso ottico (punti LK) + trasformazione di similarita' (RANSAC).
+    -> dict con dx, dy (frazione di larghezza/altezza per frame del CONTENUTO), zoom (scala per frame, >1 = si avvicina),
+       roll (gradi per frame), trend (rapporto velocita' seconda/prima meta'), ok. Fallback: phase correlation."""
+    res = {"dx": 0.0, "dy": 0.0, "zoom": 1.0, "roll": 0.0, "trend": 1.0, "ok": False}
+    if frames is None or len(frames) < 3:
+        return res
+    g = (frames[..., :3].float().mean(-1).clamp(0, 1) * 255).to(torch.uint8).cpu().numpy()
+    try:
+        import cv2
+        h, w = g.shape[1:]
+        sc = 360.0 / max(h, w)
+        g = [cv2.resize(x, (max(16, int(w * sc)), max(16, int(h * sc))), interpolation=cv2.INTER_AREA) for x in g]
+        H, W = g[0].shape
+        steps = []
+        for a, b in zip(g[:-1], g[1:]):
+            pts = cv2.goodFeaturesToTrack(a, 300, 0.01, 6)
+            if pts is None or len(pts) < 12:
+                continue
+            nxt, st, _ = cv2.calcOpticalFlowPyrLK(a, b, pts, None, winSize=(21, 21), maxLevel=3)
+            ok = st.reshape(-1) == 1
+            if ok.sum() < 12:
+                continue
+            M, inl = cv2.estimateAffinePartial2D(pts[ok], nxt[ok], method=cv2.RANSAC, ransacReprojThreshold=2.0)
+            if M is None:
+                continue
+            scale = float(np.hypot(M[0, 0], M[1, 0]))
+            ang = float(np.degrees(np.arctan2(M[1, 0], M[0, 0])))
+            # traslazione del centro dell'immagine (non dell'origine): separa pan da zoom
+            cx, cy = W / 2.0, H / 2.0
+            tx = M[0, 0] * cx + M[0, 1] * cy + M[0, 2] - cx
+            ty = M[1, 0] * cx + M[1, 1] * cy + M[1, 2] - cy
+            steps.append((tx / W, ty / H, scale, ang))
+        if len(steps) >= 2:
+            a = np.array(steps)
+            res.update(dx=float(np.median(a[:, 0])), dy=float(np.median(a[:, 1])), zoom=float(np.median(a[:, 2])),
+                       roll=float(np.median(a[:, 3])), ok=True)
+            sp = np.hypot(a[:, 0], a[:, 1]) + np.abs(a[:, 2] - 1)
+            half = len(sp) // 2
+            if half >= 1 and sp[:half].mean() > 1e-4:
+                res["trend"] = float(sp[half:].mean() / sp[:half].mean())
+            return res
+    except Exception as e:
+        print("[%s] analisi camera con optical flow non riuscita (%s): uso la phase correlation" % (_OWNER, e))
+    # fallback: sola traslazione
+    gg = torch.nn.functional.interpolate(torch.from_numpy(np.asarray(g, dtype=np.float32))[:, None], size=(96, 96), mode="area")[:, 0].numpy()
+    win = np.outer(np.hanning(96), np.hanning(96))
+    dxs, dys = [], []
+    for a, b in zip(gg[:-1], gg[1:]):
+        R = np.fft.fft2((b - b.mean()) * win) * np.conj(np.fft.fft2((a - a.mean()) * win))
+        r = np.fft.ifft2(R / (np.abs(R) + 1e-6)).real
+        y, x = np.unravel_index(np.argmax(r), r.shape)
+        dys.append((y if y < 48 else y - 96) / 96.0)
+        dxs.append((x if x < 48 else x - 96) / 96.0)
+    res.update(dx=float(np.median(dxs)), dy=float(np.median(dys)), ok=True)
+    return res
+
+
+def camera_motion(frames):
+    c = camera_analysis(frames)
+    return c["dx"], c["dy"]
+
+
+def _speed(v, slow=0.008, mid=0.025):
+    return "slowly" if v < slow else ("steadily" if v < mid else "fast")
+
+
+def motion_text(c, dy=None):
+    """descrizione inglese del movimento di camera (None = ferma). Accetta il dict di camera_analysis (o dx, dy)."""
+    if not isinstance(c, dict):
+        c = {"dx": c, "dy": dy or 0.0, "zoom": 1.0, "roll": 0.0, "trend": 1.0}
+    parts = []
+    dx, dyv = c["dx"], c["dy"]
+    if abs(dx) >= 0.002:   # contenuto verso sinistra = camera che va a destra
+        parts.append("panning %s %s" % (_speed(abs(dx)), "to the right" if dx < 0 else "to the left"))
+    if abs(dyv) >= 0.004:   # stessa soglia della regola "camera in bolla"
+        parts.append("tilting %s %s" % (_speed(abs(dyv)), "upward" if dyv > 0 else "downward"))
+    z = c.get("zoom", 1.0) - 1.0
+    if abs(z) >= 0.002:
+        parts.append("%s %s" % ("moving in closer" if z > 0 else "pulling back", _speed(abs(z), 0.006, 0.02)))
+    if abs(c.get("roll", 0.0)) >= 0.3:   # sotto e' il tremolio della camera a mano
+        parts.append("rolling slightly %s" % ("clockwise" if c["roll"] > 0 else "counter-clockwise"))
+    if not parts:
+        return None
+    t = c.get("trend", 1.0)
+    tail = " and speeding up" if t > 1.4 else (" and slowing down" if t < 0.7 else " at a constant speed")
+    return " and ".join(parts) + tail
+
+
+def auto_texts(A, B, idea, a_audio, b_audio, mA=None, mB=None):
     """prompt automatico: descrive A e l'inizio di B con il captioner locale (in cache) + una riga di idea."""
     from .caption import zzz_VideoCaption
     cap = zzz_VideoCaption().run
@@ -462,6 +566,25 @@ def auto_texts(A, B, idea, a_audio, b_audio):
     if idea_en:
         scena += " The transition: %s" % idea_en.rstrip(".")
     finale = "The shot ends exactly in the framing of the next shot, which looks like this: %s" % cap_b.strip().rstrip(".")
+    # movimento di camera reale ai due capi: H3 deve partire con quello di A e arrivare gia' con quello di B
+    cA = camera_analysis(mA if mA is not None else A[-12:])
+    cB = camera_analysis(mB if mB is not None else B[:12])
+    ma, mb = motion_text(cA), motion_text(cB)
+    # come il movimento di A deve diventare quello di B, senza cambi bruschi di direzione o velocita'
+    scena += (" Camera movement: at the start the camera is %s; from there it flows into the transition move (which may build up or "
+              "ease off in speed as the transition requires) and by the end it is %s, exactly like the camera when the next shot begins; "
+              "the camera motion stays continuous the whole time, with no jerk, no sudden stop and no reversal of direction."
+              % (ma or "still", mb or "still, settling smoothly into the framing of the next shot"))
+    if abs(cA["dy"]) < 0.004 and abs(cB["dy"]) < 0.004:   # nessun movimento verticale ai due capi: niente tilt inventati
+        scena += (" The camera stays level at the same height for the whole shot and moves only sideways (pan); "
+                  "it never tilts up or down and never rises or drops.")
+    if ma:
+        scena += " At the start the camera is already %s and keeps that motion fluidly as the transition begins." % ma
+    if mb:
+        finale += "; as it arrives, the camera is already %s exactly like in the next shot and keeps that same motion without stopping" % mb
+    else:
+        finale += "; the camera settles smoothly into the still framing of the next shot"
+    print("[%s] movimento camera misurato: fine A = %s, inizio B = %s" % (_OWNER, ma or "ferma", mb or "ferma"))
     if not cuts_ok:
         finale += ", reached by continuous motion with no cut"
     if a_audio:
@@ -565,6 +688,10 @@ class zzz_H3_TransitionDirector:
                                                            "Fuori dall'addestramento: rischio di ripetizioni/incoerenze, tempi e VRAM molto piu' alti."}),
                 "transition_zone": (["medium", "short", "large"], {"default": "medium",
                                     "tooltip": "Quanta parte generare con la zona automatica: short (~1 s + buco), medium (~2.7 s + buco), large (~4 s + buco, fino al limite di H3); tetto 35/55/80% della durata di A+B."}),
+                "fusione": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.05,
+                             "tooltip": "Solo con A e B SOVRAPPOSTE. 0 = la zona si genera da zero (comportamento normale). "
+                                        "0.6-0.9 = H3 parte dalla dissolvenza dei frame veri di A e B nella sovrapposizione e la rigenera "
+                                        "solo per questa quota: i movimenti e i luoghi delle due clip si fondono. Piu' basso = piu' fedele alle clip."}),
             },
         }
 
@@ -581,7 +708,7 @@ class zzz_H3_TransitionDirector:
 
     def run(self, clip, vae, video_a, video_b, megapixel, contesto, zona_minima, sfuma_A_dentro, sfuma_A_fuori,
             sfuma_B_dentro, sfuma_B_fuori, curva_sfumatura, scena, finale, overall_soundscape, non_diegetic_music,
-            crop, timeline_data, oltre_limite_H3=False, automatico=False, idea_transizione='', ancora_B_automatica=True, zona_automatica=True, stadi_automatici=True, transition_zone="medium"):
+            crop, timeline_data, oltre_limite_H3=False, automatico=False, idea_transizione='', ancora_B_automatica=True, zona_automatica=True, stadi_automatici=True, transition_zone="medium", fusione=0.0):
         tl = parse_timeline(timeline_data)
         path_a, ia = probe(video_a)
         path_b, ib = probe(video_b)
@@ -597,6 +724,9 @@ class zzz_H3_TransitionDirector:
         # controllo (pixel) della finestra latente
         L, w0 = p["L"], p["w0"]
         gray = torch.full((H, W, 3), 0.5)
+        fus = float(fusione) if p["mode"] == "sovrapposta" else 0.0
+        if float(fusione) > 0 and p["mode"] != "sovrapposta":
+            p["warn"].append("fusione ignorata: serve A e B SOVRAPPOSTE (ora il modo e' %s)" % p["mode"])
         frames, real = [], []
         for i in range(L):
             t = w0 + i
@@ -607,10 +737,14 @@ class zzz_H3_TransitionDirector:
             elif t >= p["z1"]:
                 use = "B"
             elif inA and inB:
-                use = "A" if t < p["mid"] else "B"
+                use = "AB" if fus > 0 else ("A" if t < p["mid"] else "B")
             else:
                 use = "A" if inA else ("B" if inB else None)
-            if use == "A" and inA:
+            if use == "AB":   # fusione: dissolvenza morbida A -> B lungo la sovrapposizione
+                x = (t - p["pb"] + 0.5) / max(1.0, float(p["endA"] - p["pb"]))
+                w = x * x * (3 - 2 * x)
+                frames.append(A[t - p["pa"]] * (1 - w) + B[t - p["pb"]] * w); real.append(True)
+            elif use == "A" and inA:
                 frames.append(A[t - p["pa"]]); real.append(True)
             elif use == "B" and inB:
                 frames.append(B[t - p["pb"]]); real.append(True)
@@ -620,7 +754,10 @@ class zzz_H3_TransitionDirector:
 
         fill = None
         if automatico:
-            scena, finale, overall_soundscape, fill, trans = auto_texts(A, B, idea_transizione, ia["has_audio"], ib["has_audio"])
+            ia0 = max(0, p["z0"] - p["pa"])     # frame reali di A subito prima della zona, di B subito dopo
+            ib0 = max(0, p["z1"] - p["pb"])
+            scena, finale, overall_soundscape, fill, trans = auto_texts(A, B, idea_transizione, ia["has_audio"], ib["has_audio"],
+                                                                        A[max(0, ia0 - 12):ia0], B[ib0:ib0 + 12])
             # nessun segmento sulla zona: la transizione stessa diventa un segmento (a stadi) su tutta la zona
             covered = sum(max(0, min(int(s.get("end", 0)), p["z1"]) - max(int(s.get("start", 0)), p["z0"])) for s in tl.get("prompts", []))
             if covered < 0.5 * (p["z1"] - p["z0"]):
@@ -635,6 +772,8 @@ class zzz_H3_TransitionDirector:
             raise ValueError("%s: VAE %s, atteso %s" % (_OWNER, tuple(video_latent.shape), tuple(empty_video.shape)))
         m, g0, g1 = build_mask(p, real, int(sfuma_A_dentro), int(sfuma_A_fuori), int(sfuma_B_dentro), int(sfuma_B_fuori),
                                curva_sfumatura)
+        if fus > 0:   # rigenerazione parziale: H3 tiene struttura e movimento della dissolvenza dei frame veri
+            m = [min(float(v), fus) for v in m]
         vmask = torch.zeros_like(video_latent)
         for t, v in enumerate(m):
             vmask[:, :, t].fill_(v)
@@ -727,6 +866,26 @@ class zzz_H3_TransitionDirector:
         return (positive, out, plan, prompt, report, json.dumps(spec))
 
 
+def _minterpolate(images, dst):
+    """24 fps -> dst con ffmpeg minterpolate (compensazione di movimento): niente frame duplicati ne' doppie immagini."""
+    n, H, W = int(images.shape[0]), int(images.shape[1]), int(images.shape[2])
+    raw = (images[..., :3].clamp(0, 1) * 255).round().to(torch.uint8).cpu().numpy().tobytes()
+    vf = "minterpolate=fps=%s:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1" % (("%.6f" % dst).rstrip("0").rstrip("."))
+    cmd = [_ffmpeg(), "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", "%dx%d" % (W, H), "-r", str(FPS), "-i", "-",
+           "-vf", vf, "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
+    r = subprocess.run(cmd, input=raw, capture_output=True, creationflags=_NOWIN)
+    if r.returncode != 0:
+        raise RuntimeError(r.stderr.decode("utf8", "ignore")[-300:])
+    arr = np.frombuffer(r.stdout, np.uint8)
+    k = arr.size // (W * H * 3)
+    out = torch.from_numpy(arr[: k * W * H * 3].reshape(k, H, W, 3).copy()).float().div(255.0)
+    m = max(1, int(round(n * dst / FPS)))
+    if out.shape[0] >= m:
+        return out[:m]
+    pad = out[-1:].expand(m - out.shape[0], -1, -1, -1)
+    return torch.cat((out, pad), 0)
+
+
 def resample_fps(images, dst):
     """riporta i frame a 24 fps (griglia H3) agli fps `dst`: stessa durata in secondi, interpolazione temporale lineare.
     |dst-24| <= 1 -> frame piu' vicino (un frame ripetuto/saltato ogni tanto, niente sfocatura da miscela)."""
@@ -734,6 +893,7 @@ def resample_fps(images, dst):
     dst = float(dst)
     if n < 2 or abs(dst - FPS) < 1e-3:
         return images
+    # minterpolate (compensazione di movimento) fa smearing sui movimenti veloci: si usa il frame piu' vicino
     m = max(1, int(round(n * dst / FPS)))
     pos = torch.arange(m, dtype=torch.float64) * (FPS / dst)
     pos = pos.clamp(0, n - 1)
