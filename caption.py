@@ -64,6 +64,44 @@ def _caption(pil_frames):
         torch.cuda.empty_cache()
 
 
+def translate_en(text):
+    """traduce una riga in inglese con lo stesso Qwen3-VL-2B (solo testo), in cache. Se e' gia' inglese la restituisce uguale."""
+    t = (text or "").strip()
+    if not t:
+        return ""
+    key = "tr1|%s" % hashlib.sha1(t.encode("utf-8")).hexdigest()
+    c = _cache()
+    if key in c:
+        return c[key]
+    import comfy.model_management as mm
+    from transformers import AutoProcessor, AutoModelForImageTextToText
+    dev = mm.get_torch_device()
+    mm.free_memory(6.0 * 1024 ** 3, dev)
+    path = _model_dir()
+    proc = AutoProcessor.from_pretrained(path)
+    model = AutoModelForImageTextToText.from_pretrained(path, dtype=torch.bfloat16, device_map=str(dev), attn_implementation="sdpa")
+    try:
+        msg = [{"role": "user", "content": [{"type": "text", "text":
+               "Translate this video direction into natural English. If it is already English, repeat it unchanged. "
+               "Keep every detail, add nothing. Output only the translation.\n\n" + t}]}]
+        inp = proc.apply_chat_template(msg, tokenize=True, add_generation_prompt=True, return_dict=True, return_tensors="pt").to(model.device)
+        with torch.inference_mode():
+            out = model.generate(**inp, max_new_tokens=200, do_sample=False)
+        res = proc.batch_decode(out[:, inp["input_ids"].shape[1]:], skip_special_tokens=True)[0].strip() or t
+    finally:
+        del model, proc
+        mm.soft_empty_cache()
+        torch.cuda.empty_cache()
+    c[key] = res
+    try:
+        with open(_cache_file(), "w", encoding="utf-8") as f:
+            json.dump(c, f, ensure_ascii=False, indent=1)
+    except Exception:
+        pass
+    print("[zzz translate] %s -> %s" % (t, res))
+    return res
+
+
 class zzz_VideoCaption:
     @classmethod
     def INPUT_TYPES(cls):

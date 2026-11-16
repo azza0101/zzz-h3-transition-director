@@ -1,6 +1,6 @@
 # ZZZ H3 Transition Director — guida per agenti (MCP / assistenti)
 
-Versione del nodo: **v2.16** (il numero e' nel titolo del nodo e nella prima riga del report; storico in testa a `director.py`).
+Versione del nodo: **v2.17** (il numero e' nel titolo del nodo e nella prima riga del report; storico in testa a `director.py`).
 Workflow di riferimento: `zzz_H3_TRANSITION_DIRECTOR_v2_TaoMate4`.
 
 > Stato di validazione (2026-11-16, transizione telo verde -> treno, 117 frame, 24 fps, stesso seed):
@@ -23,6 +23,8 @@ Workflow di riferimento: `zzz_H3_TRANSITION_DIRECTOR_v2_TaoMate4`.
 - **Stadi automatici** (`stadi_automatici`, default ON): ogni segmento >= 24 frame (1 s) diventa 2-4 stadi uguali con l'avanzamento scritto ("about one quarter / half / three quarters complete" -> "now complete, final state fully reached and holds steady"). E' la chiave della gradualita' (vedi sez. 6). Stadi propri: separarli con `->` nel testo ("crepe -> buchi -> pareti a terra"), distribuiti in parti uguali. Un segmento da lasciare intero: `"stadi": false`.
 - **Mai tagli** se non chiesti, **riempimento** dei tratti senza segmento, **ritmo costante**, **ancora B automatica** (frame di B dopo la zona, peso 0.15 -> 1), **prompt automatico** da A e B, **fps originali** in uscita.
 - Sfumatura verso B 8 frame (non 16: con 16 gli ultimi frame "recuperano" verso B).
+
+**Transizione di default (v2.17):** se sulla zona generata non ci sono segmenti (meno del 50% coperto), il Director crea da solo un segmento su tutta la zona e lo spezza in stadi: il testo e' il GLOBAL PROMPT (tradotto in inglese in automatico, qualunque lingua), oppure, se vuoto, "la scena del primo shot si trasforma progressivamente nella scena del successivo: <descrizione di B>". Vale anche per A e B con soggetti/luoghi DIVERSI (prima i testi automatici dicevano "same subject, same place" e H3 faceva uno split-screen).
 
 **Regola di scrittura (misurata):** descrivere SEMPRE in POSITIVO cosa compare e dove ("la parte alta mostra il cielo nero e il treno"), mai negazioni di posizione ("niente in alto"): la frase negativa ha prodotto una fascia di green in alto.
 

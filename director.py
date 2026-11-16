@@ -25,7 +25,7 @@ from comfy.ldm.minimax.model import FRAME_PER_TOKEN
 from comfy_extras import nodes_minimax_h3 as h3
 
 _OWNER = "ZZZ H3 Transition Director"
-VERSION = "v2.16"  # alzare a ogni modifica del nodo e annotare qui sotto
+VERSION = "v2.17"  # alzare a ogni modifica del nodo e annotare qui sotto
 # v2.0  base: timeline A/B, ancore, prompt a segmenti, audio originale in dissolvenza nell'Assemble
 # v2.1  2026-11-16  numero di versione nel titolo e nel report; audio solo dal Director (niente loader esterni)
 # v2.2  2026-11-16  prompt AUTOMATICO opzionale: caption di A e B (Qwen3-VL) + una riga 'idea_transizione'; audio automatico
@@ -43,6 +43,7 @@ VERSION = "v2.16"  # alzare a ogni modifica del nodo e annotare qui sotto
 # v2.14 2026-11-16  video VERTICALI: la rotazione nei metadati (es. FX3/telefono, 90 gradi) scambia larghezza e altezza, la tela esce verticale
 # v2.15 2026-11-16  transition_zone: short 24 / medium 64 / large 96 frame + buco, e mai oltre il 70% di A+B (clip corte)
 # v2.16 2026-11-16  tetto per livello (short 35% / medium 55% / large 80% di A+B): con clip corte i livelli restano diversi
+# v2.17 2026-11-16  UNIVERSALE per scene/soggetti diversi: niente piu' 'same subject/same place'; se la zona non ha segmenti nasce da sola una transizione a stadi (GLOBAL PROMPT tradotto in inglese, o generica A -> B)
 FPS = h3.FPS  # 24: la timeline lavora nei frame del modello
 _NOWIN = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 VIDEO_EXT = (".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v")
@@ -432,12 +433,12 @@ def build_description(tl, p, scena, finale, fill=None, stadi=True):
 _CUT_WORDS = re.compile(r"\b(cut|hard cut|jump cut|taglio|stacco|stacchi)\b", re.I)
 NO_CUT = ("This is ONE single uninterrupted take filmed by one camera: there is no cut, no jump cut, no scene change, no fade and no change "
           "of angle anywhere; the subject and the camera move continuously and smoothly through the whole shot, including the gap between the two clips.")
-FILL = ("the action simply continues in the same single shot, same subject, same place, same lighting, same continuous camera movement, "
-        "the subject keeps moving naturally and smoothly with no cut")
+FILL = ("the transition keeps progressing smoothly and continuously in the same single uninterrupted shot, "
+        "with continuous camera movement and no cut")
 
 
 PACE = ("All motion happens at natural real-time speed, constant from the first to the last frame: no slow motion, no speed ramp, "
-        "no time remapping, no acceleration to catch up; the subject walks at the same steady pace as in the beginning of the shot.")
+        "no time remapping, no acceleration to catch up; every movement keeps a steady, natural pace.")
 
 
 def auto_texts(A, B, idea, a_audio, b_audio):
@@ -447,9 +448,10 @@ def auto_texts(A, B, idea, a_audio, b_audio):
     cap_a = cap(A, 4, "")[0]
     cap_b = cap(B[:max(8, min(len(B), 48))], 3, "")[0]
     cuts_ok = bool(_CUT_WORDS.search(idea or ""))   # un taglio c'e' solo se l'utente lo scrive espressamente
-    scena = ("" if cuts_ok else NO_CUT + " ") + PACE + " The subject stays fully visible in the frame at all times. The shot starts like this: %s" % cap_a.strip()
-    if idea.strip():
-        scena += " The transition: %s" % idea.strip().rstrip(".")
+    scena = ("" if cuts_ok else NO_CUT + " ") + PACE + " The shot starts like this: %s" % cap_a.strip()
+    idea_en = _to_english(idea)
+    if idea_en:
+        scena += " The transition: %s" % idea_en.rstrip(".")
     finale = "The shot ends exactly in the framing of the next shot, which looks like this: %s" % cap_b.strip().rstrip(".")
     if not cuts_ok:
         finale += ", reached by continuous motion with no cut"
@@ -458,7 +460,23 @@ def auto_texts(A, B, idea, a_audio, b_audio):
                  "in tone; the ambience of the next shot fades in smoothly under it.")
     else:
         sound = "Natural production sound continues without interruption."
-    return scena, finale, sound, (None if cuts_ok else FILL)
+    # transizione di default (nessun segmento sulla zona): l'idea dell'utente, oppure "la scena di A diventa quella di B"
+    trans = idea_en or ("the scene of the first shot progressively transforms into the scene of the next shot, %s"
+                        % cap_b.strip().split(". ")[0].rstrip("."))
+    return scena, finale, sound, (None if cuts_ok else FILL), trans
+
+
+def _to_english(text):
+    """GLOBAL PROMPT in qualunque lingua -> inglese (H3 e' addestrato in inglese). Qwen3-VL-2B locale, in cache."""
+    t = (text or "").strip()
+    if not t:
+        return ""
+    try:
+        from .caption import translate_en
+        return translate_en(t)
+    except Exception as e:
+        print("[%s] traduzione non riuscita, uso il testo originale: %s" % (_OWNER, e))
+        return t
 
 
 def _prompt(L, description, soundscape, music):
@@ -593,7 +611,11 @@ class zzz_H3_TransitionDirector:
 
         fill = None
         if automatico:
-            scena, finale, overall_soundscape, fill = auto_texts(A, B, idea_transizione, ia["has_audio"], ib["has_audio"])
+            scena, finale, overall_soundscape, fill, trans = auto_texts(A, B, idea_transizione, ia["has_audio"], ib["has_audio"])
+            # nessun segmento sulla zona: la transizione stessa diventa un segmento (a stadi) su tutta la zona
+            covered = sum(max(0, min(int(s.get("end", 0)), p["z1"]) - max(int(s.get("start", 0)), p["z0"])) for s in tl.get("prompts", []))
+            if covered < 0.5 * (p["z1"] - p["z0"]):
+                tl["prompts"] = list(tl.get("prompts", [])) + [{"start": p["z0"], "end": p["z1"], "text": trans}]
             non_diegetic_music = "N/A"
         description, rows = build_description(tl, p, scena, finale, fill, bool(stadi_automatici))
         prompt = _prompt(L, description, overall_soundscape, non_diegetic_music)
