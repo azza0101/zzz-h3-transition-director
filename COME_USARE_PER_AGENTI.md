@@ -1,6 +1,6 @@
 # ZZZ H3 Transition Director — guida per agenti (MCP / assistenti)
 
-Versione del nodo: **v2.18** (il numero e' nel titolo del nodo e nella prima riga del report; storico in testa a `director.py`).
+Versione del nodo: **v2.19** (il numero e' nel titolo del nodo e nella prima riga del report; storico in testa a `director.py`).
 Workflow di riferimento: `zzz_H3_TRANSITION_DIRECTOR_v2_TaoMate4`.
 
 > Stato di validazione (2026-11-16, transizione telo verde -> treno, 117 frame, 24 fps, stesso seed):
@@ -27,7 +27,7 @@ Workflow di riferimento: `zzz_H3_TRANSITION_DIRECTOR_v2_TaoMate4`.
 
 **Transizione di default (v2.17):** se sulla zona generata non ci sono segmenti (meno del 50% coperto), il Director crea da solo un segmento su tutta la zona e lo spezza in stadi: il testo e' il GLOBAL PROMPT (tradotto in inglese in automatico, qualunque lingua), oppure, se vuoto, "la scena del primo shot si trasforma progressivamente nella scena del successivo: <descrizione di B>". Vale anche per A e B con soggetti/luoghi DIVERSI (prima i testi automatici dicevano "same subject, same place" e H3 faceva uno split-screen).
 
-**Location diverse (v2.18):** il prompt automatico dice che i due luoghi sono UN UNICO AMBIENTE collegato e che la camera ci passa attraverso (niente flash/sfocatura/tendina/dissolvenza). Nel GLOBAL PROMPT descrivere il movimento come "unico, continuo e fluido, a velocita' costante" e nominare i due luoghi che si collegano ("l'hangar prosegue nell'ufficio"); evitare "velocemente"/"svelando": producono una panoramica a frusta sfocata con ministacco. Testato: FX3 donna con ombrello (hangar) -> donna alla scrivania (ufficio), zona medium = panoramica continua con i due luoghi fusi (h3_director_v2_00034).
+**Location diverse (v2.18):** il prompt automatico dice che i due luoghi sono UN UNICO AMBIENTE collegato e che la camera ci passa attraverso (niente flash/sfocatura/tendina/dissolvenza). Nel GLOBAL PROMPT descrivere il movimento come "unico, continuo e fluido, a velocita' costante" e nominare i due luoghi che si collegano ("l'hangar prosegue nell'ufficio"); evitare "velocemente"/"svelando": producono una panoramica a frusta sfocata con ministacco. v2.19: il luogo nuovo entra SOLO dal lato verso cui gira la camera e gli sfondi non si fondono sul posto (la v2.18 'unico ambiente' dava una dissolvenza brutta dietro al soggetto e un resto dell'ombrello all'inizio di B). Testato: FX3 donna con ombrello (hangar) -> donna alla scrivania (ufficio), GLOBAL PROMPT 'whip pan verso destra, rapido ma continuo, con il mosso naturale... l'ufficio e' la stanza accanto' = whip pan collegato senza dissolvenze (h3_director_v2_00035).
 
 **Regola di scrittura (misurata):** descrivere SEMPRE in POSITIVO cosa compare e dove ("la parte alta mostra il cielo nero e il treno"), mai negazioni di posizione ("niente in alto"): la frase negativa ha prodotto una fascia di green in alto.
 

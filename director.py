@@ -25,7 +25,7 @@ from comfy.ldm.minimax.model import FRAME_PER_TOKEN
 from comfy_extras import nodes_minimax_h3 as h3
 
 _OWNER = "ZZZ H3 Transition Director"
-VERSION = "v2.18"  # alzare a ogni modifica del nodo e annotare qui sotto
+VERSION = "v2.19"  # alzare a ogni modifica del nodo e annotare qui sotto
 # v2.0  base: timeline A/B, ancore, prompt a segmenti, audio originale in dissolvenza nell'Assemble
 # v2.1  2026-11-16  numero di versione nel titolo e nel report; audio solo dal Director (niente loader esterni)
 # v2.2  2026-11-16  prompt AUTOMATICO opzionale: caption di A e B (Qwen3-VL) + una riga 'idea_transizione'; audio automatico
@@ -45,6 +45,7 @@ VERSION = "v2.18"  # alzare a ogni modifica del nodo e annotare qui sotto
 # v2.16 2026-11-16  tetto per livello (short 35% / medium 55% / large 80% di A+B): con clip corte i livelli restano diversi
 # v2.17 2026-11-16  UNIVERSALE per scene/soggetti diversi: niente piu' 'same subject/same place'; se la zona non ha segmenti nasce da sola una transizione a stadi (GLOBAL PROMPT tradotto in inglese, o generica A -> B)
 # v2.18 2026-11-16  location diverse: frase SPAZIO CONTINUO (i due luoghi sono un unico ambiente collegato, la camera ci passa attraverso, niente flash/sfocatura)
+# v2.19 2026-11-16  SPACE_JOIN rivisto: il luogo nuovo entra SOLO dal lato verso cui gira la camera, gli sfondi non si fondono sul posto (niente dissolvenza dietro il soggetto), alla fine solo il contenuto di B
 FPS = h3.FPS  # 24: la timeline lavora nei frame del modello
 _NOWIN = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 VIDEO_EXT = (".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v")
@@ -442,9 +443,11 @@ PACE = ("All motion happens at natural real-time speed, constant from the first 
         "no time remapping, no acceleration to catch up; every movement keeps a steady, natural pace.")
 
 
-SPACE_JOIN = ("If the two shots are in different places, they are parts of one continuous connected environment: the space of the first place "
-              "extends seamlessly into the next one, and the camera travels through the space between them in one fluid move, "
-              "with every surface, wall and floor continuing naturally from one place to the other, without any flash, blur, wipe or dissolve.")
+SPACE_JOIN = ("If the two shots are in different places, they are neighbouring parts of one connected building or environment: "
+              "the camera physically turns or moves from the first place toward the next one, and the new place enters the frame only "
+              "from the side the camera is turning toward, while the first place leaves the frame on the opposite side; "
+              "each background stays solid and real while it is in view, never morphing, fading or blending in place, "
+              "and at the end only the content of the next shot is in the frame, exactly as in the next shot.")
 
 
 def auto_texts(A, B, idea, a_audio, b_audio):
