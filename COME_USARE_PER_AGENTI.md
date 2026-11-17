@@ -59,7 +59,7 @@ Se la zona e' piu' corta di `zona_minima` si allarga a cavallo del raccordo. La 
 
 ## 2. Catena del workflow (nodi principali)
 
-Modello: `UNETLoader (H3 ref2va)` -> LoRA acceleratrice (TaoMate 3 step) -> `ModelAttentionBackend` -> (SLA, bypass) -> anteprima taeh3 -> `MiniMaxH3SigmaShift` (12 / 3) -> (Peso Ancore, bypass) -> sampler.
+Modello: `UNETLoader (H3 ref2va)` -> LoRA acceleratrice (TaoMate 3 step) -> `ModelAttentionBackend` -> anteprima taeh3 -> `MiniMaxH3SigmaShift` (12 / 3) -> sampler.
 Ingressi: `CLIPLoader`, `VAELoader` video (codifica degli ingressi), VAE audio, `VAELoader` **VAE SOL** (decode della transizione: decoder H3 distillato, ~2x piu' veloce, niente TensorRT).
 **Director** (`zzz_H3_TransitionDirector`): carica i due video da solo (`video_a`, `video_b`), costruisce prompt, latente, maschera e `plan`.
 Sampler: `RandomNoise` (seed), `KSamplerSelect` (euler), `ManualSigmas` (`1.0, 0.961165, 0.853333, 0.0` = 3 step TaoMate), dentro il subgraph di generazione.
@@ -67,7 +67,7 @@ Sampler: `RandomNoise` (seed), `KSamplerSelect` (euler), `ManualSigmas` (`1.0, 0
 Uscite: due `VHS_VideoCombine` (nvenc veloce e H.264 crf 10).
 
 L'audio e i frame reali li legge **il Director** (ffmpeg): non servono loader video esterni ne' nodi audio a parte.
-"Scheduler + Steps" e "DURATA TRANSIZIONE" sono nodi residui: la durata la decide la zona sulla timeline, le sigma arrivano da `ManualSigmas`.
+"Scheduler + Steps" e' un nodo residuo: la durata la decide la zona sulla timeline, le sigma arrivano da `ManualSigmas`.
 
 ## 3. Campi del Director
 
@@ -163,7 +163,7 @@ H3 genera sempre a **24 fps**: non prenderli dai video. Il Director legge gli fp
    - Esistono copie con lo stesso nome ma hash diverso (es. Abiray): usare gli indirizzi sopra.
    - Il decoder TensorRT (`minimax_h3_vae_decoder.engine`) **non si usa piu'** dal 2026-11-17: sostituito dalla VAE sol (nota "DECODE CON VAE SOL" nel workflow). Misurato: sol ~3 s contro ~7 s del TRT, differenza invisibile (PSNR 37-47 dB).
    - Non servono: `zzz_minimax_h3_turbo_v4_step600_pruned208.safetensors` (nodo in bypass).
-4. **Pacchetti di nodi richiesti:** ComfyUI **>= 0.44** con i nodi MiniMax H3 nativi (serve per la VAE sol), ComfyUI-VideoHelperSuite (VHS_VideoCombine), comfyui-kjnodes (anteprima taeh3). ComfyUI-H3VAE_TRT NON serve piu'. In bypass/inutilizzati, installarli solo se richiesti all'apertura: plaguekind ComfyUI-H3-SLA-Attention (SLA), zzz_ripple_long (PESO ANCORE), zzz_h3_transition_timing (DURATA TRANSIZIONE, residuo). Python: `transformers` (per Qwen3-VL) e `ffmpeg`/`ffprobe` nel PATH.
+4. **Pacchetti di nodi richiesti:** ComfyUI **>= 0.44** con i nodi MiniMax H3 nativi (serve per la VAE sol), ComfyUI-VideoHelperSuite (VHS_VideoCombine), comfyui-kjnodes (anteprima taeh3). ComfyUI-H3VAE_TRT NON serve piu'. Nient'altro: dal 2026-11-17 il workflow d'esempio non contiene piu' SLA, PESO ANCORE ne' DURATA TRANSIZIONE (erano in bypass o inutilizzati e richiedevano pacchetti non pubblici). Se all'apertura un nodo risulta mancante, il workflow non e' quello aggiornato: rifare `git pull`. Python: `transformers` (per Qwen3-VL) e `ffmpeg`/`ffprobe` nel PATH.
 5. **Verifica dopo l'installazione:** riavviare ComfyUI, F5, aprire il workflow da `example_workflows/`, controllare con `panel_query_graph` sul nodo Director che `zona_automatica`, `stadi_automatici`, `ancora_B_automatica`, `automatico` siano true e `transition_zone` = medium; caricare due video e fare un run di prova. Se mancano nodi, installarli con il Manager; se mancano modelli, vedi punto 2-3.
 6. **Aggiornamenti:** quando l'utente dice "cerca aggiornamenti del Transition Director": `git -C ComfyUI/custom_nodes/zzz_h3_transition_director pull`, leggere le righe nuove dello storico in testa a `director.py`, riavviare ComfyUI, F5, ripetere la verifica del punto 5 (i campi nuovi possono spostare i valori salvati: controllare i booleani).
 7. **Avvio consigliato:** `--fast fp16_accumulation --max-upload-size 4096` (il primo accelera VAE e convoluzioni H3, il secondo serve per caricare video grandi dal pulsante Load video).
