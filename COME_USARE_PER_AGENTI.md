@@ -60,7 +60,7 @@ Se la zona e' piu' corta di `zona_minima` si allarga a cavallo del raccordo. La 
 ## 2. Catena del workflow (nodi principali)
 
 Modello: `UNETLoader (H3 ref2va)` -> LoRA acceleratrice (TaoMate 3 step) -> `ModelAttentionBackend` -> (SLA, bypass) -> anteprima taeh3 -> `MiniMaxH3SigmaShift` (12 / 3) -> (Peso Ancore, bypass) -> sampler.
-Ingressi: `CLIPLoader`, `VAELoader` video, VAE audio, VAE TRT decoder (decode piu' veloce).
+Ingressi: `CLIPLoader`, `VAELoader` video (codifica degli ingressi), VAE audio, `VAELoader` **VAE SOL** (decode della transizione: decoder H3 distillato, ~2x piu' veloce, niente TensorRT).
 **Director** (`zzz_H3_TransitionDirector`): carica i due video da solo (`video_a`, `video_b`), costruisce prompt, latente, maschera e `plan`.
 Sampler: `RandomNoise` (seed), `KSamplerSelect` (euler), `ManualSigmas` (`1.0, 0.961165, 0.853333, 0.0` = 3 step TaoMate), dentro il subgraph di generazione.
 **Assemble** (`zzz_H3_TransitionDirectorAssemble`): rimonta frame veri + parte generata, audio originale in dissolvenza; esce a fps di A (`fps_uscita`).
@@ -139,7 +139,7 @@ H3 genera sempre a **24 fps**: non prenderli dai video. Il Director legge gli fp
 - Aggiungere widget **obbligatori** sposta `widgets_values` dei workflow salvati: i campi nuovi vanno come `optional` in coda, con default che non cambi il comportamento.
 - Alzare `VERSION` in `director.py` a ogni modifica e annotarla; tenere un backup `director.py.backup_<versione>_<data>`.
 - Non lasciare nodi bypassati "per sicurezza" nella versione da distribuire: SLA, Peso Ancore e LoRA v4 sono opzioni, il test ha funzionato senza.
-- Dipendenze da portare su un altro PC: cartella `zzz_h3_transition_director`, modelli H3 (UNET fl2va, CLIP, VAE video/audio, LoRA TaoMate), engine TRT del decoder (opzionale), Qwen3-VL-2B in `models/LLM/Qwen-VL/` (solo per il prompt automatico), `ffmpeg`/`ffprobe` nel PATH, nodi VHS.
+- Dipendenze da portare su un altro PC: cartella `zzz_h3_transition_director`, modelli H3 (UNET fl2va, CLIP, VAE video/audio, VAE sol, LoRA TaoMate), Qwen3-VL-2B in `models/LLM/Qwen-VL/` (solo per il prompt automatico), `ffmpeg`/`ffprobe` nel PATH, nodi VHS.
 
 ## 9. INSTALLAZIONE SU UN ALTRO PC (istruzioni per l'agente)
 
@@ -153,6 +153,7 @@ H3 genera sempre a **24 fps**: non prenderli dai video. Il Director legge gli fp
    | `minimax_h3_fl2va_pruned_int8_convrot.safetensors` | `diffusion_models/MINIMAX/` | https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors | 20 970 379 616 B (~21 GB) |
    | `qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors` | `text_encoders/` | https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors | 15 687 142 551 B (~15.7 GB) |
    | `minimax_h3_video_vae_int8_convrot.safetensors` | `vae/` | https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/vae/minimax_h3_video_vae_int8_convrot.safetensors | 2 811 065 184 B |
+   | `minimax_h3_sol_vae_int8_convrot.safetensors` (decode, OBBLIGATORIA) | `vae/` | https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/vae/minimax_h3_sol_vae_int8_convrot.safetensors | 1 988 306 504 B |
    | `minimax_h3_audio_vae_fp32.safetensors` | `vae/` | https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/vae/minimax_h3_audio_vae_fp32.safetensors | 605 254 808 B |
    | `minimax_h3_taomate_fl2va_3step_avg_rank_19_bf16.safetensors` (LoRA TaoMate 3 step, ATTIVA) | `loras/MINIMAX/` | https://huggingface.co/Kijai/MiniMax-H3-experimental/resolve/main/loras/minimax_h3_taomate_fl2va_3step_avg_rank_19_bf16.safetensors | 176 723 664 B (identica a quella usata qui) |
    | `taeh3.safetensors` (solo anteprima) | `vae_approx/` | https://huggingface.co/OzzyGT/taeh3/resolve/main/taeh3.safetensors (mirror di madebyollin/taehv) | 22 709 752 B (identica a quella usata qui) |
@@ -160,9 +161,9 @@ H3 genera sempre a **24 fps**: non prenderli dai video. Il Director legge gli fp
 
    - Il text encoder **nvfp4** va al meglio sulle GPU NVIDIA **Blackwell (RTX 50xx)**; sulle altre e' emulato. Alternativa: `qwen3vl_32b_minimax_h3_int8_convrot.safetensors` (https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/text_encoders/qwen3vl_32b_minimax_h3_int8_convrot.safetensors, ~27 GB): in quel caso cambiare il file nel CLIPLoader "CLIP H3".
    - Esistono copie con lo stesso nome ma hash diverso (es. Abiray): usare gli indirizzi sopra.
-   - `minimax_h3_vae_decoder.engine` (decoder TensorRT, OPZIONALE): **non si scarica e non si copia**, va compilato sulla GPU di destinazione (nota "DECODE VELOCE" nel workflow). Se manca, collegare il VAE video normale al decode.
+   - Il decoder TensorRT (`minimax_h3_vae_decoder.engine`) **non si usa piu'** dal 2026-11-17: sostituito dalla VAE sol (nota "DECODE CON VAE SOL" nel workflow). Misurato: sol ~3 s contro ~7 s del TRT, differenza invisibile (PSNR 37-47 dB).
    - Non servono: `zzz_minimax_h3_turbo_v4_step600_pruned208.safetensors` (nodo in bypass).
-4. **Pacchetti di nodi richiesti:** ComfyUI recente con i nodi MiniMax H3 nativi (testato su 0.44), ComfyUI-VideoHelperSuite (VHS_VideoCombine), comfyui-kjnodes (anteprima taeh3), ComfyUI-H3VAE_TRT (solo per il decoder TensorRT). In bypass/inutilizzati, installarli solo se richiesti all'apertura: plaguekind ComfyUI-H3-SLA-Attention (SLA), zzz_ripple_long (PESO ANCORE), zzz_h3_transition_timing (DURATA TRANSIZIONE, residuo). Python: `transformers` (per Qwen3-VL) e `ffmpeg`/`ffprobe` nel PATH.
+4. **Pacchetti di nodi richiesti:** ComfyUI **>= 0.44** con i nodi MiniMax H3 nativi (serve per la VAE sol), ComfyUI-VideoHelperSuite (VHS_VideoCombine), comfyui-kjnodes (anteprima taeh3). ComfyUI-H3VAE_TRT NON serve piu'. In bypass/inutilizzati, installarli solo se richiesti all'apertura: plaguekind ComfyUI-H3-SLA-Attention (SLA), zzz_ripple_long (PESO ANCORE), zzz_h3_transition_timing (DURATA TRANSIZIONE, residuo). Python: `transformers` (per Qwen3-VL) e `ffmpeg`/`ffprobe` nel PATH.
 5. **Verifica dopo l'installazione:** riavviare ComfyUI, F5, aprire il workflow da `example_workflows/`, controllare con `panel_query_graph` sul nodo Director che `zona_automatica`, `stadi_automatici`, `ancora_B_automatica`, `automatico` siano true e `transition_zone` = medium; caricare due video e fare un run di prova. Se mancano nodi, installarli con il Manager; se mancano modelli, vedi punto 2-3.
 6. **Aggiornamenti:** quando l'utente dice "cerca aggiornamenti del Transition Director": `git -C ComfyUI/custom_nodes/zzz_h3_transition_director pull`, leggere le righe nuove dello storico in testa a `director.py`, riavviare ComfyUI, F5, ripetere la verifica del punto 5 (i campi nuovi possono spostare i valori salvati: controllare i booleani).
-7. **Avvio consigliato:** `--max-upload-size 4096` per caricare video grandi dal pulsante Load video.
+7. **Avvio consigliato:** `--fast fp16_accumulation --max-upload-size 4096` (il primo accelera VAE e convoluzioni H3, il secondo serve per caricare video grandi dal pulsante Load video).
