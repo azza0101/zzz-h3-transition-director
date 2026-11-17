@@ -143,7 +143,7 @@ H3 genera sempre a **24 fps**: non prenderli dai video. Il Director legge gli fp
 
 ## 9. INSTALLAZIONE SU UN ALTRO PC (istruzioni per l'agente)
 
-0. **Accesso:** il repository e' PRIVATO. Se `git clone` chiede credenziali: `gh auth login` (account dell'utente) e poi `gh repo clone azza0101/zzz-h3-transition-director`.
+0. **Accesso:** il repository e' PUBBLICO: `git clone https://github.com/azza0101/zzz-h3-transition-director.git zzz_h3_transition_director` dentro `ComfyUI/custom_nodes/`, senza login.
 1. **Nodo:** `git clone <url di questo repository>` dentro `ComfyUI/custom_nodes/` (cartella `zzz_h3_transition_director`). Aggiornare: `git pull` + riavvio di ComfyUI + F5. Il workflow e' in `example_workflows/` e compare nei Template di ComfyUI sotto questo nodo.
 2. **Prima di scaricare qualunque modello: CERCARE se c'e' gia'** sul PC (cartelle `models/` di ComfyUI e i percorsi in `extra_model_paths.yaml`), anche con nome diverso (stesso modello in altra quantizzazione). Scaricare SOLO cio' che manca, con il tool di download di ComfyUI (`download_model`), nella cartella giusta. Non inventare URL: cercare il nome esatto del file (HuggingFace / Civitai) e chiedere all'utente se non si trova.
 3. **Modelli usati dal workflow: dove scaricarli** (indirizzi verificati il 2026-11-16, tutti rispondono; le dimensioni servono a riconoscere un file gia' presente). Cartella = sottocartella di `ComfyUI/models/`.
